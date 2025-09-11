@@ -80,7 +80,10 @@ RUN apk add --no-cache libcap \
        getcap /usr/bin/dumb-init | grep -q 'cap_net_bind_service=ep'; \
      fi \
   && apk del libcap \
-  && ln -sf /usr/local/openresty/nginx/sbin/nginx /usr/bin/nginx
+  && if [ -x /usr/local/openresty/nginx/sbin/nginx ]; then ln -sf /usr/local/openresty/nginx/sbin/nginx /usr/bin/nginx; \
+     elif [ -x /usr/local/nginx/sbin/nginx ]; then ln -sf /usr/local/nginx/sbin/nginx /usr/bin/nginx; \
+     elif [ -x /sbin/nginx ]; then ln -sf /sbin/nginx /usr/bin/nginx; \
+     else echo "nginx binary not found in expected locations" >&2; exit 1; fi
 
 USER www-data
 

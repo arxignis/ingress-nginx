@@ -69,6 +69,7 @@ const (
 	luaSharedDictsKey             = "lua-shared-dicts"
 	debugConnections              = "debug-connections"
 	workerSerialReloads           = "enable-serial-reloads"
+	enableArxignis                = "enable-arxignis"
 )
 
 var (
@@ -415,6 +416,17 @@ func ReadConfig(src map[string]string) config.Configuration {
 			to.WorkerSerialReloads = boolVal
 		}
 		delete(conf, workerSerialReloads)
+	}
+
+	if val, ok := conf[enableArxignis]; ok {
+		boolVal, err := strconv.ParseBool(val)
+		if err != nil {
+			to.EnableArxignis = false
+			klog.Warningf("failed to parse enable-arxignis setting, valid values are true or false, found %s", val)
+		} else {
+			to.EnableArxignis = boolVal
+		}
+		delete(conf, enableArxignis)
 	}
 
 	if val, ok := conf[debugConnections]; ok {

@@ -14,6 +14,31 @@
 
 ARG BASE_IMAGE
 
+# Stage 1: Add Lua dependencies to the base image
+FROM ${BASE_IMAGE} AS lua-deps
+
+USER root
+
+# Install LuaRocks for proper package management
+RUN apk update \
+  && apk add --no-cache \
+    build-base \
+    unzip \
+    wget \
+    git \
+    openssl-dev \
+    pcre-dev \
+    zlib-dev \
+    luarocks5.1
+
+# Install Lua dependencies via LuaRocks (proper package management)
+RUN luarocks-5.1 install lua-resty-lrucache \
+  && luarocks-5.1 install lua-resty-lock \
+  && luarocks-5.1 install lua-resty-mlcache
+
+# Note: Verification requires OpenResty context, so we'll verify at runtime
+
+# Stage 2: Build the final image
 FROM ${BASE_IMAGE}
 
 ARG TARGETARCH
@@ -28,11 +53,14 @@ LABEL org.opencontainers.image.vendor="Arxignis"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${COMMIT_SHA}"
-LABEL org.opencontainers.image.description="Arxignis-enabled NGINX Ingress Controller for Kubernetes"
+
+LABEL org.opencontainers.image.description="Arxignis-enabled NGINX Ingress Controller for Kubernetes with full Lua dependencies"
+
 
 LABEL build_id="${BUILD_ID}"
 
 WORKDIR  /etc/nginx
+
 
 # Install Lua dependencies for Arxignis
 USER root
@@ -47,6 +75,7 @@ RUN apk update \
     zlib-dev \
     luarocks5.1 \
     diffutils \
+
   && luarocks-5.1 install lua-resty-mlcache \
   && luarocks-5.1 install lua-resty-lrucache \
   && luarocks-5.1 install lua-resty-lock \
@@ -69,6 +98,11 @@ EOF
 
 # Copy existing ingress-nginx Lua modules and configuration
 COPY --chown=www-data:www-data rootfs/etc /etc
+
+
+# Note: Lua modules will be verified at runtime in OpenResty context
+# Standard lua5.1 cannot test resty.* modules as they require LuaJIT/OpenResty FFI
+RUN echo "✅ Lua dependencies installed via LuaRocks - verification will happen at runtime"
 
 COPY --chown=www-data:www-data bin/${TARGETARCH}/dbg /
 COPY --chown=www-data:www-data bin/${TARGETARCH}/nginx-ingress-controller /

@@ -14,31 +14,6 @@
 
 ARG BASE_IMAGE
 
-# Stage 1: Add Lua dependencies to the base image
-FROM ${BASE_IMAGE} AS lua-deps
-
-USER root
-
-# Install LuaRocks for proper package management
-RUN apk update \
-  && apk add --no-cache \
-    build-base \
-    unzip \
-    wget \
-    git \
-    openssl-dev \
-    pcre-dev \
-    zlib-dev \
-    luarocks5.1
-
-# Install Lua dependencies via LuaRocks (proper package management)
-RUN luarocks-5.1 install lua-resty-lrucache \
-  && luarocks-5.1 install lua-resty-lock \
-  && luarocks-5.1 install lua-resty-mlcache
-
-# Note: Verification requires OpenResty context, so we'll verify at runtime
-
-# Stage 2: Build the final image
 FROM ${BASE_IMAGE}
 
 ARG TARGETARCH
@@ -53,34 +28,47 @@ LABEL org.opencontainers.image.vendor="Arxignis"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${COMMIT_SHA}"
-LABEL org.opencontainers.image.description="Arxignis-enabled NGINX Ingress Controller for Kubernetes with full Lua dependencies"
+LABEL org.opencontainers.image.description="Arxignis-enabled NGINX Ingress Controller for Kubernetes"
 
 LABEL build_id="${BUILD_ID}"
 
 WORKDIR  /etc/nginx
 
-# Copy Lua modules from the lua-deps stage (both share and lib directories)
-COPY --from=lua-deps /usr/local/share/lua /usr/local/share/lua
-COPY --from=lua-deps /usr/local/lib/lua /usr/local/lib/lua
-
-# Install runtime dependencies including Lua
+# Install Lua dependencies for Arxignis
+USER root
 RUN apk update \
-  && apk upgrade \
   && apk add --no-cache \
+    build-base \
+    unzip \
+    wget \
+    git \
+    openssl-dev \
+    pcre-dev \
+    zlib-dev \
+    luarocks5.1 \
     diffutils \
-    lua5.1 \
-    lua5.1-dev \
+  && luarocks-5.1 install lua-resty-mlcache \
+  && luarocks-5.1 install lua-resty-lrucache \
+  && luarocks-5.1 install lua-resty-lock \
+  && apk del build-base unzip wget git openssl-dev pcre-dev zlib-dev luarocks5.1 \
   && rm -rf /var/cache/apk/*
 
-# Copy ingress-nginx business logic and configuration
-# Note: We use a hybrid approach:
-# 1. LuaRocks installs resty.* dependencies properly
-# 2. We still copy custom ingress-nginx business logic that can't be packaged
-COPY --chown=www-data:www-data etc /etc
+# Create minimal worker module for Arxignis
+RUN mkdir -p /etc/nginx/lua/resty/arxignis \
+  && cat > /etc/nginx/lua/resty/arxignis/worker.lua << 'EOF'
+local _M = {}
 
-# Note: Lua modules will be verified at runtime in OpenResty context
-# Standard lua5.1 cannot test resty.* modules as they require LuaJIT/OpenResty FFI
-RUN echo "✅ Lua dependencies installed via LuaRocks - verification will happen at runtime"
+function _M.start_flush_timers(config)
+    ngx.log(ngx.INFO, "Arxignis worker initialized with API URL: " .. (config.ARXIGNIS_API_URL or "not set"))
+    -- Placeholder for background tasks
+    -- In a full implementation, this would start timers for database updates
+end
+
+return _M
+EOF
+
+# Copy existing ingress-nginx Lua modules and configuration
+COPY --chown=www-data:www-data rootfs/etc /etc
 
 COPY --chown=www-data:www-data bin/${TARGETARCH}/dbg /
 COPY --chown=www-data:www-data bin/${TARGETARCH}/nginx-ingress-controller /

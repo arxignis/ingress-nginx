@@ -54,21 +54,17 @@ RUN apk update \
   && rm -rf /var/cache/apk/*
 
 # Create minimal worker module for Arxignis
-RUN mkdir -p /etc/nginx/lua/resty/arxignis \
-  && cat > /etc/nginx/lua/resty/arxignis/worker.lua << 'EOF'
-local _M = {}
-
-function _M.start_flush_timers(config)
-    ngx.log(ngx.INFO, "Arxignis worker initialized with API URL: " .. (config.ARXIGNIS_API_URL or "not set"))
-    -- Placeholder for background tasks
-    -- In a full implementation, this would start timers for database updates
-end
-
-return _M
-EOF
+RUN mkdir -p /etc/nginx/lua/resty/arxignis && \
+    echo 'local _M = {}' > /etc/nginx/lua/resty/arxignis/worker.lua && \
+    echo '' >> /etc/nginx/lua/resty/arxignis/worker.lua && \
+    echo 'function _M.start_flush_timers(config)' >> /etc/nginx/lua/resty/arxignis/worker.lua && \
+    echo '    ngx.log(ngx.INFO, "Arxignis worker initialized with API URL: " .. (config.ARXIGNIS_API_URL or "not set"))' >> /etc/nginx/lua/resty/arxignis/worker.lua && \
+    echo 'end' >> /etc/nginx/lua/resty/arxignis/worker.lua && \
+    echo '' >> /etc/nginx/lua/resty/arxignis/worker.lua && \
+    echo 'return _M' >> /etc/nginx/lua/resty/arxignis/worker.lua
 
 # Copy existing ingress-nginx Lua modules and configuration
-COPY --chown=www-data:www-data rootfs/etc /etc
+COPY --chown=www-data:www-data etc /etc
 
 COPY --chown=www-data:www-data bin/${TARGETARCH}/dbg /
 COPY --chown=www-data:www-data bin/${TARGETARCH}/nginx-ingress-controller /

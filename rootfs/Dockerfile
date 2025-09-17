@@ -14,6 +14,32 @@
 
 ARG BASE_IMAGE
 
+# Stage 1: Add Lua dependencies to the base image
+FROM ${BASE_IMAGE} AS lua-deps
+
+USER root
+
+# Install LuaRocks and build dependencies
+RUN apk update \
+  && apk add --no-cache \
+    build-base \
+    unzip \
+    wget \
+    git \
+    openssl-dev \
+    pcre-dev \
+    zlib-dev
+
+# Download required Lua modules directly for Arxignis
+RUN mkdir -p /usr/local/share/lua/5.1/resty \
+  && cd /tmp \
+  && wget -q https://raw.githubusercontent.com/thibaultcha/lua-resty-mlcache/master/lib/resty/mlcache.lua -O /usr/local/share/lua/5.1/resty/mlcache.lua \
+  && wget -q https://raw.githubusercontent.com/openresty/lua-resty-lrucache/master/lib/resty/lrucache.lua -O /usr/local/share/lua/5.1/resty/lrucache.lua \
+  && wget -q https://raw.githubusercontent.com/openresty/lua-resty-lock/master/lib/resty/lock.lua -O /usr/local/share/lua/5.1/resty/lock.lua
+
+# Note: Verification requires OpenResty context, so we'll verify at runtime
+
+# Stage 2: Build the final image
 FROM ${BASE_IMAGE}
 
 ARG TARGETARCH
@@ -21,26 +47,30 @@ ARG VERSION
 ARG COMMIT_SHA
 ARG BUILD_ID=UNSET
 
-LABEL org.opencontainers.image.title="NGINX Ingress Controller for Kubernetes"
+LABEL org.opencontainers.image.title="NGINX Ingress Controller for Kubernetes with Arxignis"
 LABEL org.opencontainers.image.documentation="https://kubernetes.github.io/ingress-nginx/"
-LABEL org.opencontainers.image.source="https://github.com/kubernetes/ingress-nginx"
-LABEL org.opencontainers.image.vendor="The Kubernetes Authors"
+LABEL org.opencontainers.image.source="https://github.com/arxignis/ingress-nginx"
+LABEL org.opencontainers.image.vendor="Arxignis"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${COMMIT_SHA}"
-LABEL org.opencontainers.image.description="Arxignis custom build of the NGINX Ingress Controller for Kubernetes"
+LABEL org.opencontainers.image.description="Arxignis-enabled NGINX Ingress Controller for Kubernetes with full Lua dependencies"
 
 LABEL build_id="${BUILD_ID}"
 
 WORKDIR  /etc/nginx
 
+# Copy Lua modules from the lua-deps stage
+COPY --from=lua-deps /usr/local/share/lua /usr/local/share/lua
+
+# Install minimal runtime dependencies for Lua modules
 RUN apk update \
   && apk upgrade \
   && apk add --no-cache \
     diffutils \
   && rm -rf /var/cache/apk/*
 
-COPY --chown=www-data:www-data etc /etc
+COPY --chown=www-data:www-data rootfs/etc /etc
 
 COPY --chown=www-data:www-data bin/${TARGETARCH}/dbg /
 COPY --chown=www-data:www-data bin/${TARGETARCH}/nginx-ingress-controller /
@@ -90,6 +120,8 @@ USER www-data
 # Create symlinks to redirect nginx logs to stdout and stderr docker log collector
 RUN  ln -sf /dev/stdout /var/log/nginx/access.log \
   && ln -sf /dev/stderr /var/log/nginx/error.log
+
+# Lua modules will be verified when Arxignis is enabled in the controller
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/nginx-ingress-controller"]

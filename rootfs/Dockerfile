@@ -14,6 +14,31 @@
 
 ARG BASE_IMAGE
 
+# Stage 1: Add Lua dependencies to the base image
+FROM ${BASE_IMAGE} AS lua-deps
+
+USER root
+
+# Install LuaRocks for proper package management
+RUN apk update \
+  && apk add --no-cache \
+    build-base \
+    unzip \
+    wget \
+    git \
+    openssl-dev \
+    pcre-dev \
+    zlib-dev \
+    luarocks5.1
+
+# Install Lua dependencies via LuaRocks (proper package management)
+RUN luarocks-5.1 install lua-resty-lrucache \
+  && luarocks-5.1 install lua-resty-lock \
+  && luarocks-5.1 install lua-resty-mlcache
+
+# Note: Verification requires OpenResty context, so we'll verify at runtime
+
+# Stage 2: Build the final image
 FROM ${BASE_IMAGE}
 
 ARG TARGETARCH
@@ -21,26 +46,41 @@ ARG VERSION
 ARG COMMIT_SHA
 ARG BUILD_ID=UNSET
 
-LABEL org.opencontainers.image.title="NGINX Ingress Controller for Kubernetes"
+LABEL org.opencontainers.image.title="NGINX Ingress Controller for Kubernetes with Arxignis"
 LABEL org.opencontainers.image.documentation="https://kubernetes.github.io/ingress-nginx/"
-LABEL org.opencontainers.image.source="https://github.com/kubernetes/ingress-nginx"
-LABEL org.opencontainers.image.vendor="The Kubernetes Authors"
+LABEL org.opencontainers.image.source="https://github.com/arxignis/ingress-nginx"
+LABEL org.opencontainers.image.vendor="Arxignis"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${COMMIT_SHA}"
-LABEL org.opencontainers.image.description="Arxignis custom build of the NGINX Ingress Controller for Kubernetes"
+LABEL org.opencontainers.image.description="Arxignis-enabled NGINX Ingress Controller for Kubernetes with full Lua dependencies"
 
 LABEL build_id="${BUILD_ID}"
 
 WORKDIR  /etc/nginx
 
+# Copy Lua modules from the lua-deps stage (both share and lib directories)
+COPY --from=lua-deps /usr/local/share/lua /usr/local/share/lua
+COPY --from=lua-deps /usr/local/lib/lua /usr/local/lib/lua
+
+# Install runtime dependencies including Lua
 RUN apk update \
   && apk upgrade \
   && apk add --no-cache \
     diffutils \
+    lua5.1 \
+    lua5.1-dev \
   && rm -rf /var/cache/apk/*
 
+# Copy ingress-nginx business logic and configuration
+# Note: We use a hybrid approach:
+# 1. LuaRocks installs resty.* dependencies properly
+# 2. We still copy custom ingress-nginx business logic that can't be packaged
 COPY --chown=www-data:www-data etc /etc
+
+# Note: Lua modules will be verified at runtime in OpenResty context
+# Standard lua5.1 cannot test resty.* modules as they require LuaJIT/OpenResty FFI
+RUN echo "✅ Lua dependencies installed via LuaRocks - verification will happen at runtime"
 
 COPY --chown=www-data:www-data bin/${TARGETARCH}/dbg /
 COPY --chown=www-data:www-data bin/${TARGETARCH}/nginx-ingress-controller /
@@ -80,13 +120,18 @@ RUN apk add --no-cache libcap \
        getcap /usr/bin/dumb-init | grep -q 'cap_net_bind_service=ep'; \
      fi \
   && apk del libcap \
-  && ln -sf /usr/local/openresty/nginx/sbin/nginx /usr/bin/nginx
+  && if [ -x /usr/local/openresty/nginx/sbin/nginx ]; then ln -sf /usr/local/openresty/nginx/sbin/nginx /usr/bin/nginx; \
+     elif [ -x /usr/local/nginx/sbin/nginx ]; then ln -sf /usr/local/nginx/sbin/nginx /usr/bin/nginx; \
+     elif [ -x /sbin/nginx ]; then ln -sf /sbin/nginx /usr/bin/nginx; \
+     else echo "nginx binary not found in expected locations" >&2; exit 1; fi
 
 USER www-data
 
 # Create symlinks to redirect nginx logs to stdout and stderr docker log collector
 RUN  ln -sf /dev/stdout /var/log/nginx/access.log \
   && ln -sf /dev/stderr /var/log/nginx/error.log
+
+# Lua modules will be verified when Arxignis is enabled in the controller
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/nginx-ingress-controller"]

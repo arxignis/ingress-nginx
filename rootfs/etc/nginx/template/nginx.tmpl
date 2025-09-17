@@ -1281,7 +1281,7 @@ stream {
             {{ range $limit := $limits }}
             {{ $limit }}{{ end }}
 
-            {{ if $cfg.EnableArxignis }}
+            {{ if $all.Cfg.EnableArxignis }}
             # Arxignis bot protection
             access_by_lua_block {
                 local http = require "resty.http"

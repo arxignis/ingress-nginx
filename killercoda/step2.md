@@ -1,61 +1,76 @@
-# Step 2: Deploy demo app and Ingress
+# Step 2: Configure Arxignis Integration
 
-1) Deploy echo app and service
+## Update to Arxignis-Enabled Image
+
 ```bash
-kubectl create ns demo || true
-cat <<'YAML' | kubectl -n demo apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata: { name: echo }
-spec:
-  replicas: 1
-  selector: { matchLabels: { app: echo } }
-  template:
-    metadata: { labels: { app: echo } }
-    spec:
-      containers:
-        - name: http-echo
-          image: hashicorp/http-echo:0.2.3
-          args: ["-text=hello-from-echo"]
-          ports: [{ containerPort: 5678 }]
----
-apiVersion: v1
-kind: Service
-metadata: { name: echo }
-spec:
-  selector: { app: echo }
-  ports:
-    - name: http
-      port: 80
-      targetPort: 5678
-YAML
+kubectl -n ingress-nginx set image deploy/ingress-nginx-controller \
+  controller=ghcr.io/arxignis/ingress-nginx:v1.0.3
+
+kubectl -n ingress-nginx describe deploy ingress-nginx-controller | grep Image:
 ```
 
-2) Create an Ingress using ingressClassName nginx
+## Enable Arxignis with Real API Key(REPACE PLACEHOLDER WITH REAL API KEY)
+
 ```bash
-cat <<'YAML' | kubectl -n demo apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: echo
-spec:
-  ingressClassName: nginx
-  rules:
-    - host: demo.local
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: echo
-                port:
-                  number: 80
-YAML
+kubectl -n ingress-nginx patch configmap ingress-nginx-controller \
+  --type merge -p '{"data":{"enable-arxignis":"true"}}'
+
+kubectl -n ingress-nginx set env deploy/ingress-nginx-controller \
+  ARXIGNIS_API_URL="https://api.arxignis.com" \
+  ARXIGNIS_API_KEY="API KEY HERE" \
+  ARXIGNIS_MODE="monitor" \
+  ARXIGNIS_CAPTCHA_PROVIDER="recaptcha"
 ```
 
-3) Access via port-forward (works on any service type)
+## Configure Ports for Sandbox
+
 ```bash
-kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 8080:80 >/dev/null 2>&1 &
-curl -i -H "Host: demo.local" http://127.0.0.1:8080/
+cat > /tmp/fix-ports.json << 'EOF'
+[{
+  "op": "replace",
+  "path": "/spec/template/spec/containers/0/args",
+  "value": [
+    "/nginx-ingress-controller",
+    "--election-id=ingress-nginx-leader",
+    "--controller-class=k8s.io/ingress-nginx",
+    "--ingress-class=nginx",
+    "--configmap=$(POD_NAMESPACE)/ingress-nginx-controller",
+    "--validating-webhook=:8443",
+    "--validating-webhook-certificate=/usr/local/certificates/cert",
+    "--validating-webhook-key=/usr/local/certificates/key",
+    "--http-port=8080",
+    "--https-port=8444"
+  ]
+}]
+EOF
+
+cat > /tmp/fix-container-ports.json << 'EOF'
+[
+  {"op": "replace", "path": "/spec/template/spec/containers/0/ports/0/containerPort", "value": 8080},
+  {"op": "replace", "path": "/spec/template/spec/containers/0/ports/1/containerPort", "value": 8444}
+]
+EOF
+
+kubectl -n ingress-nginx patch deploy ingress-nginx-controller \
+  --type='json' --patch-file /tmp/fix-ports.json
+
+kubectl -n ingress-nginx patch deploy ingress-nginx-controller \
+  --type='json' --patch-file /tmp/fix-container-ports.json
+```
+
+## Restart and Wait for Deployment
+
+```bash
+kubectl -n ingress-nginx rollout restart deploy/ingress-nginx-controller
+kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=180s
+kubectl -n ingress-nginx get pods -l app.kubernetes.io/component=controller
+```
+
+
+## Verify Arxignis Configuration
+
+```bash
+kubectl -n ingress-nginx get configmap ingress-nginx-controller -o yaml | grep arxignis
+kubectl -n ingress-nginx get deploy ingress-nginx-controller -o yaml | grep -A5 -B5 ARXIGNIS
+kubectl -n ingress-nginx logs -l app.kubernetes.io/component=controller | grep -i arxignis
 ```

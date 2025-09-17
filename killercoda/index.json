@@ -1,22 +1,26 @@
 {
-  "title": "Ingress NGINX + Arxignis (No Helm)",
-  "description": "Deploy the custom controller image and enable Arxignis without Helm on Kubernetes.",
-  "difficulty": "beginner",
-  "time": "15 minutes",
+  "title": "Arxignis Integration with Ingress-NGINX ",
+  "description": "Deploy ingress-nginx controller with Arxignis",
   "details": {
+    "intro": {
+      "text": "intro.md"
+    },
     "steps": [
-      { "title": "Setup and deploy controller", "text": "step1.md" },
-      { "title": "Deploy demo app and Ingress", "text": "step2.md" },
-      { "title": "Validate Arxignis and traffic", "text": "step3.md" }
-    ],
-    "intro": { "text": "intro.md" },
-    "finish": { "text": "finish.md" }
+      {
+        "title": "Setup Repository and Deploy Base Controller",
+        "text": "step1.md"
+      },
+      {
+        "title": "Configure Arxignis Integration",
+        "text": "step2.md"
+      },
+      {
+        "title": "Deploy Demo Application and Test Bot Protection",
+        "text": "step3.md"
+      }
+    ]
   },
-  "backend": { "imageid": "kubernetes-kubeadm-1node" },
-  "environment": {
-    "uilayout": "editor-terminal",
-    "showdashboard": false
+  "backend": {
+    "imageid": "kubernetes-kubeadm-1node"
   }
 }
-
-

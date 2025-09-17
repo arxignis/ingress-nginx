@@ -1,11 +1,19 @@
 # Ingress NGINX + Arxignis (No Helm)
 
-In this scenario you'll:
+In this scenario, you'll deploy a custom NGINX Ingress Controller with Arxignis integration without using Helm.
 
-- Deploy the custom controller image published at `ghcr.io/arxignis/ingress-nginx:v1.0.1` without Helm
-- Enable Arxignis via ConfigMap flag and environment variables
-- Deploy a demo app and route traffic through the controller
+## What you'll accomplish:
 
-You will execute simple `kubectl` commands, use the static manifests from this repo, and validate functionality.
+- Deploy the enhanced controller image with full Lua dependencies
+- Configure Arxignis environment variables and settings
+- Set up high ports (8080/8444) for sandbox compatibility
+- Deploy a demo application with Ingress routing
+- Validate the complete integration architecture
 
+## Prerequisites:
 
+- Kubernetes cluster (provided by KillerCoda)
+- Basic knowledge of kubectl commands
+- Understanding of Kubernetes Ingress concepts
+
+Let's get started!

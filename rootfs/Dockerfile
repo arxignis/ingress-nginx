@@ -19,7 +19,7 @@ FROM ${BASE_IMAGE} AS lua-deps
 
 USER root
 
-# Install LuaRocks and build dependencies
+# Install LuaRocks for proper package management
 RUN apk update \
   && apk add --no-cache \
     build-base \
@@ -28,14 +28,13 @@ RUN apk update \
     git \
     openssl-dev \
     pcre-dev \
-    zlib-dev
+    zlib-dev \
+    luarocks5.1
 
-# Download required Lua modules directly for Arxignis
-RUN mkdir -p /usr/local/share/lua/5.1/resty \
-  && cd /tmp \
-  && wget -q https://raw.githubusercontent.com/thibaultcha/lua-resty-mlcache/master/lib/resty/mlcache.lua -O /usr/local/share/lua/5.1/resty/mlcache.lua \
-  && wget -q https://raw.githubusercontent.com/openresty/lua-resty-lrucache/master/lib/resty/lrucache.lua -O /usr/local/share/lua/5.1/resty/lrucache.lua \
-  && wget -q https://raw.githubusercontent.com/openresty/lua-resty-lock/master/lib/resty/lock.lua -O /usr/local/share/lua/5.1/resty/lock.lua
+# Install Lua dependencies via LuaRocks (proper package management)
+RUN luarocks-5.1 install lua-resty-lrucache \
+  && luarocks-5.1 install lua-resty-lock \
+  && luarocks-5.1 install lua-resty-mlcache
 
 # Note: Verification requires OpenResty context, so we'll verify at runtime
 
@@ -60,17 +59,28 @@ LABEL build_id="${BUILD_ID}"
 
 WORKDIR  /etc/nginx
 
-# Copy Lua modules from the lua-deps stage
+# Copy Lua modules from the lua-deps stage (both share and lib directories)
 COPY --from=lua-deps /usr/local/share/lua /usr/local/share/lua
+COPY --from=lua-deps /usr/local/lib/lua /usr/local/lib/lua
 
-# Install minimal runtime dependencies for Lua modules
+# Install runtime dependencies including Lua
 RUN apk update \
   && apk upgrade \
   && apk add --no-cache \
     diffutils \
+    lua5.1 \
+    lua5.1-dev \
   && rm -rf /var/cache/apk/*
 
-COPY --chown=www-data:www-data rootfs/etc /etc
+# Copy ingress-nginx business logic and configuration
+# Note: We use a hybrid approach:
+# 1. LuaRocks installs resty.* dependencies properly
+# 2. We still copy custom ingress-nginx business logic that can't be packaged
+COPY --chown=www-data:www-data etc /etc
+
+# Note: Lua modules will be verified at runtime in OpenResty context
+# Standard lua5.1 cannot test resty.* modules as they require LuaJIT/OpenResty FFI
+RUN echo "✅ Lua dependencies installed via LuaRocks - verification will happen at runtime"
 
 COPY --chown=www-data:www-data bin/${TARGETARCH}/dbg /
 COPY --chown=www-data:www-data bin/${TARGETARCH}/nginx-ingress-controller /

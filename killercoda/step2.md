@@ -9,7 +9,7 @@ kubectl -n ingress-nginx set image deploy/ingress-nginx-controller \
 kubectl -n ingress-nginx describe deploy ingress-nginx-controller | grep Image:
 ```
 
-## Enable Arxignis with Real API Key(REPACE PLACEHOLDER WITH REAL API KEY)
+## Enable Arxignis with Real API Key
 
 ```bash
 kubectl -n ingress-nginx patch configmap ingress-nginx-controller \
@@ -17,9 +17,11 @@ kubectl -n ingress-nginx patch configmap ingress-nginx-controller \
 
 kubectl -n ingress-nginx set env deploy/ingress-nginx-controller \
   ARXIGNIS_API_URL="https://api.arxignis.com" \
-  ARXIGNIS_API_KEY="API KEY HERE" \
+  ARXIGNIS_API_KEY="/qrasi1m7pEdpZ/qW015agJMa4Jfb9czMpq5ThN7VnA=" \
   ARXIGNIS_MODE="monitor" \
-  ARXIGNIS_CAPTCHA_PROVIDER="recaptcha"
+  ARXIGNIS_CAPTCHA_PROVIDER="recaptcha" \
+  ARXIGNIS_ACCESS_RULE_ID="default-rule" \
+  ARXIGNIS_API_SSL_VERIFY="false"
 ```
 
 ## Configure Ports for Sandbox
@@ -66,6 +68,7 @@ kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeou
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/component=controller
 ```
 
+The v1.0.3 image includes fixes for SSL verification and caching issues that previously caused errors.
 
 ## Verify Arxignis Configuration
 

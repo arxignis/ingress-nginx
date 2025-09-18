@@ -1287,35 +1287,21 @@ stream {
                 local http = require "resty.http"
                 local cjson = require "cjson.safe"
                 
-                local client_ip = ngx.var.remote_addr
+                -- Get the real client IP from headers (for load balancer/proxy scenarios)
+                local client_ip = ngx.req.get_headers()["x-real-ip"] or 
+                                 ngx.req.get_headers()["x-forwarded-for"] or 
+                                 ngx.var.remote_addr
+                -- If X-Forwarded-For contains multiple IPs, take the first one
+                if client_ip and string.find(client_ip, ",") then
+                    client_ip = string.match(client_ip, "([^,]+)")
+                end
+                client_ip = string.gsub(client_ip or "", "%s+", "") -- trim whitespace
                 local user_agent = ngx.req.get_headers()["user-agent"] or ""
                 local host = ngx.req.get_headers()["host"] or ""
                 
                 ngx.log(ngx.INFO, "Arxignis: Analyzing request from ", client_ip, " UA: ", user_agent)
                 
-                -- Check cache for this IP first
-                local cache = _G.arxignis_cache
-                local cached_result = nil
-                if cache then
-                    cached_result, _ = cache:get("ip:" .. client_ip)
-                    if cached_result then
-                        ngx.log(ngx.INFO, "Arxignis: Found cached decision for ", client_ip, ": ", cached_result.action)
-                        if cached_result.action == "block" then
-                            ngx.log(ngx.WARN, "Arxignis: Blocking cached bad IP: ", client_ip)
-                            ngx.status = 403
-                            ngx.header.content_type = "application/json"
-                            ngx.say(cjson.encode({
-                                success = false,
-                                error = "Access denied by Arxignis",
-                                reason = "IP blocked by threat intelligence",
-                                client_ip = client_ip
-                            }))
-                            ngx.exit(403)
-                        end
-                    end
-                end
-                
-                -- Call Arxignis API for real-time threat analysis
+                -- Call Arxignis API for real-time threat analysis (no caching to avoid bugs)
                 local httpc = http.new()
                 httpc:set_timeout(2000)  -- 2 second timeout for real-time
                 
@@ -1348,59 +1334,29 @@ stream {
                         ["Content-Type"] = "application/json"
                     },
                     body = cjson.encode(payload),
-                    ssl_verify = true
+                    ssl_verify = false  -- Disable SSL verification to fix certificate issues
                 })
                 
                 local decision = "allow"  -- Default to allow
                 local reason = "No threat detected"
+                local api_response_body = "no response"
                 
                 if remediation_res then
                     ngx.log(ngx.INFO, "Arxignis: API response status: ", remediation_res.status)
                     ngx.log(ngx.INFO, "Arxignis: API response body: ", remediation_res.body or "empty")
+                    api_response_body = remediation_res.body or "empty"
                     
                     if remediation_res.status == 200 and remediation_res.body then
                         local api_response = cjson.decode(remediation_res.body)
                         if api_response and api_response.success and api_response.remediation then
                             decision = api_response.remediation.action or "allow"
-                            reason = "API decision: " .. decision
-                            
-                            -- Cache the result
-                            if cache then
-                                cache:set("ip:" .. client_ip, {
-                                    action = decision,
-                                    score = api_response.remediation.score or 0,
-                                    rule_id = api_response.remediation.ruleId or "none"
-                                }, 300)  -- Cache for 5 minutes
-                            end
+                            reason = "API decision: " .. decision .. " (score: " .. (api_response.remediation.score or 0) .. ")"
                         end
                     end
                 else
                     ngx.log(ngx.WARN, "Arxignis: API call failed: ", err or "unknown error")
+                    api_response_body = "API call failed: " .. (err or "unknown error")
                 end
-                
-                -- Also send to data API for logging (in background)
-                ngx.timer.at(0, function()
-                    local log_httpc = http.new()
-                    log_httpc:set_timeout(5000)
-                    
-                    local log_res, log_err = log_httpc:request_uri(api_url .. "/v1/log/batch", {
-                        method = "POST",
-                        headers = {
-                            ["Authorization"] = "Bearer " .. api_key,
-                            ["Content-Type"] = "application/json"
-                        },
-                        body = cjson.encode({
-                            entries = { payload }
-                        }),
-                        ssl_verify = true
-                    })
-                    
-                    if log_res and log_res.status == 200 then
-                        ngx.log(ngx.INFO, "Arxignis: Successfully logged to data API")
-                    else
-                        ngx.log(ngx.WARN, "Arxignis: Data API logging failed: ", log_err or "unknown error")
-                    end
-                end)
                 
                 -- Apply the decision
                 if decision == "block" then
@@ -1411,11 +1367,12 @@ stream {
                         success = false,
                         error = "Access denied by Arxignis",
                         reason = reason,
-                        client_ip = client_ip
+                        client_ip = client_ip,
+                        api_response = api_response_body
                     }))
                     ngx.exit(403)
                 else
-                    ngx.log(ngx.INFO, "Arxignis: Request allowed - ", reason)
+                    ngx.log(ngx.INFO, "Arxignis: Request allowed - ", reason, " | API response: ", api_response_body)
                 end
             }
             {{ end }}

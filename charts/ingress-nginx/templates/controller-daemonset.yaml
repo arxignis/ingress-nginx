@@ -109,6 +109,10 @@ spec:
               value: {{ .Values.controller.arxignis.mode | quote }}
             - name: ARXIGNIS_CAPTCHA_PROVIDER
               value: {{ .Values.controller.arxignis.captchaProvider | quote }}
+            - name: ARXIGNIS_ACCESS_RULE_ID
+              value: {{ .Values.controller.arxignis.accessRuleId | quote }}
+            - name: ARXIGNIS_API_SSL_VERIFY
+              value: {{ .Values.controller.arxignis.apiSslVerify | quote }}
           {{- end }}
           {{- if .Values.controller.enableMimalloc }}
             - name: LD_PRELOAD

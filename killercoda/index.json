@@ -1,0 +1,26 @@
+{
+  "title": "Arxignis Integration with Ingress-NGINX ",
+  "description": "Deploy ingress-nginx controller with Arxignis",
+  "details": {
+    "intro": {
+      "text": "intro.md"
+    },
+    "steps": [
+      {
+        "title": "Setup Repository and Deploy Base Controller",
+        "text": "step1.md"
+      },
+      {
+        "title": "Configure Arxignis Integration",
+        "text": "step2.md"
+      },
+      {
+        "title": "Deploy Demo Application and Test Bot Protection",
+        "text": "step3.md"
+      }
+    ]
+  },
+  "backend": {
+    "imageid": "kubernetes-kubeadm-1node"
+  }
+}
